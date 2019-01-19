@@ -28,6 +28,7 @@ PhotosPerCart = 30  # Selphy takes 16 sheets per tray
 imagecounter = 0
 imagefolder = 'Photos'
 templatePath = os.path.join('Photos', 'Template', "template.png") #Path of template image
+logoPath = os.path.join('Photos', 'Template', 'logo.png') # path of logo image
 ImageShowed = False
 Printing = False
 BUTTON_PIN = 25
@@ -37,10 +38,13 @@ IMAGE_WIDTH = 550
 IMAGE_HEIGHT = 360
 
 Filters = ["none", "solarize", "sketch", "oilpaint", "film", "saturation", "cartoon"]
-
+selected_filters = ["none", "none", "none"]
 
 # Load the background template
 bgimage = PIL.Image.open(templatePath)
+
+# Load the logo
+logoimage = PIL.Image.open(logoPath)
 
 #Setup GPIO
 GPIO.setmode(GPIO.BCM)
@@ -323,14 +327,18 @@ def TakePictures():
     global Printing
     global PhotosPerCart
     global TotalImageCount
+    global selected_filters
 
+    camera.image_effect = selected_filters[0]
     input(pygame.event.get())
-    CountDownPhoto = "1/3"        
+    CountDownPhoto = "1/3"
     filename1 = CapturePicture()
 
+    camera.image_effect = selected_filters[1]
     CountDownPhoto = "2/3"
     filename2 = CapturePicture()
 
+    camera.image_effect = selected_filters[2]
     CountDownPhoto = "3/3"
     filename3 = CapturePicture()
 
@@ -343,6 +351,7 @@ def TakePictures():
     image3 = PIL.Image.open(filename3)   
     TotalImageCount = TotalImageCount + 1
 
+    bgimage.paste(logoimage, (55, 30))
     bgimage.paste(image1, (625, 30))
     bgimage.paste(image2, (625, 410))
     bgimage.paste(image3, (55, 410))
@@ -357,18 +366,19 @@ def TakePictures():
     bgimage2 = bgimage.rotate(90)
     bgimage2.save('/home/pi/Desktop/tempprint.jpg')
     ImageShowed = False
-    Message = "Press the button to print"
-    UpdateDisplay()
-    time.sleep(1)
-    Message = ""
-    UpdateDisplay()
-    Printing = False
-    WaitForPrintingEvent()
-    Numeral = ""
-    Message = ""
-    print(Printing)
+
     
     if Printing:
+        Message = "Press the button to print"
+        UpdateDisplay()
+        time.sleep(1)
+        Message = ""
+        UpdateDisplay()
+        
+        WaitForPrintingEvent()
+        Numeral = ""
+        Message = ""
+        print(Printing)
         if (TotalImageCount <= PhotosPerCart):
             if os.path.isfile('/home/pi/Desktop/tempprint.jpg'):
                 # Open a connection to cups
@@ -396,12 +406,20 @@ def TakePictures():
                 Numeral = ""
                 UpdateDisplay()
                 time.sleep(1)
+    else:
+        Message = "Printing disabled"
+        UpdateDisplay()
+        time.sleep(1)
                 
     Message = ""
     Numeral = ""
     ImageShowed = False
     UpdateDisplay()
     time.sleep(1)
+    
+    # reset filters
+    selected_filters = ["none", "none", "none"]
+
 
 def MyCallback(channel):
     global Printing
@@ -453,6 +471,7 @@ def WaitForEvent():
                     return
                 if event.key == pygame.K_UP:
                     SelectFilters()
+                    return
                     
         time.sleep(0.2)
 
@@ -470,12 +489,12 @@ def SelectFilters():
     
     while current_image < 3:
         # show number / total ("filter 1/6") so people know
-        Message = "Filter {}/{}".format(current_filter, str(len(Filters) - 1))
+        Message = "Filter {}/{} - Photo {}/{}".format(current_filter + 1, str(len(Filters)), current_image, 3)
         UpdateDisplay()
         
         # show picture number (so you can apply filters uniquely for each picture)
         # ex. "Filter for photo # 1 (of 3)"
-        # ^^^ this will require slight reworking of the UpdateDisplay to have multiple strings of sub-text
+        # ^^^ doing this right will require slight reworking of the UpdateDisplay to have multiple strings of sub-text
         global pygame
         NotEvent = True
         while NotEvent:
@@ -505,11 +524,12 @@ def SelectFilters():
                     # camera button: select filter for photo (store somewhere)
                     elif event.key == pygame.K_DOWN:
                         # select filter, advance image
+                        selected_filters[current_image] = Filters[current_filter]
                         current_image += 1
                         break
             camera.image_effect = Filters[current_filter]
             
-            Message = "Filter {}/{}\nPhoto {}/{}".format(current_filter, str(len(Filters) - 1), current_image, 3)
+            Message = "Filter {}/{} - Photo {}/{}".format(current_filter + 1, str(len(Filters)), current_image, 3)
             UpdateDisplay()
             
             time.sleep(0.2)
@@ -526,7 +546,7 @@ def SelectFilters():
 def main(threadName, *args):
     InitFolder()
     while True:
-        show_image('images/start_camera.jpg')
+        show_image('images/idle_prompt.png')
         WaitForEvent()
         time.sleep(0.2)
         
