@@ -7,13 +7,14 @@ import time
 import os
 import PIL.Image
 # temporarily disable CUPS printing
-# import cups
+import cups
 import RPi.GPIO as GPIO
 
 from threading import Thread
 from pygame.locals import *
 from time import sleep
 from PIL import Image, ImageDraw
+import subprocess
 
 
 # initialise global variables
@@ -28,20 +29,37 @@ PhotosPerCart = 30  # Selphy takes 16 sheets per tray
 imagecounter = 0
 imagefolder = 'Photos'
 templatePath = os.path.join('Photos', 'Template', "template.png") #Path of template image
-logoPath = os.path.join('Photos', 'Template', 'logo.png') # path of logo image
+instaTemplatePath = os.path.join("Photos", "Template", "insta.jpg") #Path of instagram template (500x500)
+#logoPath = os.path.join('Photos', 'Template', 'logo.png') # path of logo image
+#logoPath = os.path.join('Photos', 'Template', 'logo-wedding.png') # path of logo image
+logoPath = os.path.join('Photos', 'Template', 'logo-shower.png') # path of logo image
 ImageShowed = False
 Printing = False
+UploadToInstagram = False #True
 BUTTON_PIN = 25
 #IMAGE_WIDTH = 558
 #IMAGE_HEIGHT = 374
-IMAGE_WIDTH = 550
-IMAGE_HEIGHT = 360
+IMAGE_WIDTH = 1100
+IMAGE_HEIGHT = 720
+
+PRINT_SUBSIZE = 55, 36
+
+INSTA_WIDTH = 500
+INSTA_HEIGHT = 500
+#INSTA_SUBSIZE = 250, 163
+INSTA_SUBSIZE = 1000, 654
+INSTA_USERNAME = ""
+INSTA_PASSWORD = ""
+INSTA_CAPTION = "Photobooth testin' #hashtagswork"
 
 Filters = ["none", "solarize", "sketch", "oilpaint", "film", "saturation", "cartoon"]
 selected_filters = ["none", "none", "none"]
 
 # Load the background template
 bgimage = PIL.Image.open(templatePath)
+
+if UploadToInstagram:
+    instaImage = PIL.Image.open(instaTemplatePath)
 
 # Load the logo
 logoimage = PIL.Image.open(logoPath)
@@ -351,10 +369,39 @@ def TakePictures():
     image3 = PIL.Image.open(filename3)   
     TotalImageCount = TotalImageCount + 1
 
+    image1_print = image1
+    image2_print = image2
+    image3_print = image3
+
+    image1_print.resize(PRINT_SUBSIZE)
+    image2_print.resize(PRINT_SUBSIZE)
+    image3_print.resize(PRINT_SUBSIZE)
+
+    logoimage.resize(PRINT_SUBSIZE)
+
     bgimage.paste(logoimage, (55, 30))
-    bgimage.paste(image1, (625, 30))
-    bgimage.paste(image2, (625, 410))
-    bgimage.paste(image3, (55, 410))
+    bgimage.paste(image1_print, (625, 30))
+    bgimage.paste(image2_print, (625, 410))
+    bgimage.paste(image3_print, (55, 410))
+    
+    if UploadToInstagram:
+        #logoimage.thumbnail(INSTA_SUBSIZE, PIL.Image.ANTIALIAS)
+        image1.resize(INSTA_SUBSIZE)
+        instaImage.paste(image1, (0, 140))
+        instaImage.save("instaTemp1.jpg")
+        
+        image2.resize(INSTA_SUBSIZE)
+        instaImage.paste(image2, (0, 140))
+        instaImage.save("instaTemp2.jpg")
+        
+        image3.resize(INSTA_SUBSIZE)
+        instaImage.paste(image3, (0, 140))
+        instaImage.save("instaTemp3.jpg")
+        #instaImage.paste(logoimage, (0, 87))
+        # instaImage.paste(image1, (250, 87))
+        # instaImage.paste(image2, (250, 250))
+        # instaImage.paste(image3, (0, 250))
+    
     # Create the final filename
     ts = time.time()
     Final_Image_Name = os.path.join(imagefolder, "Final_" + str(TotalImageCount)+"_"+str(ts) + ".jpg")
@@ -363,8 +410,23 @@ def TakePictures():
     # Save a temp file, its faster to print from the pi than usb
     bgimage.save('/home/pi/Desktop/tempprint.jpg')
     ShowPicture('/home/pi/Desktop/tempprint.jpg',3)
-    bgimage2 = bgimage.rotate(90)
-    bgimage2.save('/home/pi/Desktop/tempprint.jpg')
+    #bgimage2 = bgimage.rotate(90)
+    #bgimage2.save('/home/pi/Desktop/tempprint.jpg')
+    
+    if UploadToInstagram:
+        # upload image here
+        #instaImage.save("instaTemp.jpg")
+        # instapy -u acymbotski -p TerminalPassword1234 -f GDHarley_OP-ART_#11.jpg -t "from da booth #noice"
+        #subprocess.run(["instapy", "-u", INSTA_USERNAME, "-p", INSTA_PASSWORD, "-f", "instaTemp.jpg", "-t", INSTA_CAPTION, "&"])
+        
+        subprocess.Popen("./rapid_post.sh {} {} {} {} &".format(INSTA_USERNAME, INSTA_PASSWORD, "instaTemp", "\"" + INSTA_CAPTION + "\""), close_fds=True, shell=True)
+        
+        # subprocess.Popen("/usr/local/bin/instapy -u {} -p {} -f {} -t {}".format(INSTA_USERNAME, INSTA_PASSWORD, "instaTemp1.jpg", "\"" + INSTA_CAPTION + "\""), close_fds=True, shell=True)
+        
+        # subprocess.Popen("/usr/local/bin/instapy -u {} -p {} -f {} -t {}".format(INSTA_USERNAME, INSTA_PASSWORD, "instaTemp2.jpg", "\"" + INSTA_CAPTION + "\""), close_fds=True, shell=True)
+        
+        # subprocess.Popen("/usr/local/bin/instapy -u {} -p {} -f {} -t {}".format(INSTA_USERNAME, INSTA_PASSWORD, "instaTemp3.jpg", "\"" + INSTA_CAPTION + "\""), close_fds=True, shell=True)
+    
     ImageShowed = False
 
     
@@ -386,14 +448,14 @@ def TakePictures():
                 # get a list of printers
                 printers = conn.getPrinters()
                 # select printer 0
-                printer_name = printers.keys()[0]
+                printer_name = list(printers)[0] #printers.keys()[0]
                 Message = "Printing in progress..."
                 UpdateDisplay()
                 time.sleep(1)
                 # print the buffer file
                 printqueuelength = len(conn.getJobs())
                 if printqueuelength > 1:
-                    ShowPicture('/home/pi/Desktop/tempprint.jpg',3)
+                    #ShowPicture('/home/pi/Desktop/tempprint.jpg',3)
                     conn.enablePrinter(printer_name)
                     Message = "Impression impossible"
                     UpdateDisplay()
