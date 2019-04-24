@@ -9,6 +9,7 @@ import picamera
 import time
 import RPi.GPIO as GPIO
 import subprocess
+import cups
 
 imageFolderName = "Photos"
 
@@ -242,7 +243,9 @@ def takePictures():
     showImage("tempPrint.jpg", 3)
 
 def printPhoto():
-    if PRINTING_ENABLED:
+    global PRINT_ENABLED
+    global photosPrintedSinceReload
+    if PRINT_ENABLED:
         if os.path.isfile("tempPrint.jpg"):
             # open connection to cups
             conn = cups.Connection()
