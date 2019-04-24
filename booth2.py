@@ -7,7 +7,8 @@ from pygame.locals import *
 import json
 import picamera
 import time
-
+import RPi.GPIO as GPIO
+import subprocess
 
 imageFolderName = "Photos"
 
@@ -30,7 +31,7 @@ BUTTON_PIN = 25
 
 PRINT_WIDTH = 1100
 PRINT_HEIGHT = 720
-PRINT_SUBSIZE = 55, 36
+PRINT_SUBSIZE = 550, 360
 
 # drewnote: this doesn't make sense
 INSTA_WIDTH = 500
@@ -57,7 +58,7 @@ if INSTA_ENABLED:
 logoImage = PIL.Image.open(logoPath)
 
 # resize logo image now
-logoimage.resize(PRINT_SUBSIZE)
+logoImage = logoImage.resize(PRINT_SUBSIZE)
 
 # setup GPIO
 GPIO.setmode(GPIO.BCM)
@@ -68,7 +69,7 @@ pygame.init()
 # hide mouse cursor
 pygame.mouse.set_visible(False)
 # get info about display
-displayInfo = pygame.display.info()
+displayInfo = pygame.display.Info()
 # init full screen
 screen = pygame.display.set_mode((displayInfo.current_w, displayInfo.current_h), pygame.FULLSCREEN)
 # create background object
@@ -102,13 +103,17 @@ printerCapacity = 16
 # print this many pictures per session
 copiesPerSession = 2
 
-def displayText(txt):
-    font = pygame.fon.Font(None, 100)
+def displayText(txt, fontSize=100):
+    font = pygame.font.Font(None, fontSize)
     text = font.render(txt, 1, (227, 157, 200))
     textPos = text.get_rect()
-    textpos.centerx = background.get_rect().centerx
-    textpos.centery = background.get_rect().centery
-    background.blit(text, testpos)
+    textPos.centerx = background.get_rect().centerx
+    textPos.centery = background.get_rect().centery
+    background.fill(pygame.Color("white"))
+    background.blit(text, textPos)
+    
+    screen.blit(background, (0, 0))
+    pygame.display.flip()
     
 # check if path exists
 # if not, create it
@@ -117,20 +122,20 @@ def ensureFolder(path):
         os.makedirs(path)
     
 def initFilesystem():
-    global imagefolder
-    global Message
+    #global imagefolder
+    #global Message
  
-    Message = 'Checking filesystem...'
-    UpdateDisplay()
-    Message = ''
+    #Message = 'Checking filesystem...'
+    #UpdateDisplay()
+    #Message = ''
 
     #check image folder existing, create if not exists
-    if not os.path.isdir(imagefolder):    
-        os.makedirs(imagefolder)    
+    #if not os.path.isdir(imagefolder):    
+    #    os.makedirs(imagefolder)    
             
-    imagefolder2 = os.path.join(imagefolder, 'images')
-    if not os.path.isdir(imagefolder2):
-        os.makedirs(imagefolder2)
+    #imagefolder2 = os.path.join(imagefolder, 'images')
+    #if not os.path.isdir(imagefolder2):
+    #    os.makedirs(imagefolder2)
         
     displayText("Checking filesystem...")
     ensureFolder(os.path.join(dir_path, imageFolderName))
@@ -143,7 +148,8 @@ def showImage(path, delay=-1):
     img = pygame.image.load(path)
     img = img.convert()
     
-    set_dimensions(img.get_width(), img.get_height())
+    # drewnote: holdover from the original script. do we need it?
+    #set_dimensions(img.get_width(), img.get_height())
     x = (displayInfo.current_w / 2) - (img.get_width() / 2)
     y = (displayInfo.current_h / 2) - (img.get_height() / 2)
     
@@ -156,6 +162,9 @@ def showImage(path, delay=-1):
 
 # capture photo with 3/2/1 countdown, return filename
 def capturePhoto():
+
+    global photosTaken
+    
     background.fill(pygame.Color("black"))
     screen.blit(background, (0, 0))
     pygame.display.flip()
@@ -164,15 +173,15 @@ def capturePhoto():
     
     # countdown: 3... 2... 1... Pose!
     for i in range(3, -1, -1):
-        if x == 0:
-            displayText("Pose!")
+        if i == 0:
+            displayText("Pose!", 255)
         else:
-            displayText(str(i))
+            displayText(str(i), 255)
         time.sleep(1)
         
     ts = time.time()
     filename = os.path.join(dir_path, imageFolderName, "{}_{}.jpg".format(photosTaken, ts))
-    camera.capture(filename, resize=(IMAGE_WIDTH, IMAGE_HEIGHT))
+    camera.capture(filename, resize=(PRINT_WIDTH, PRINT_HEIGHT))
     camera.stop_preview()
     
     photosTaken += 1
@@ -192,23 +201,26 @@ def takePictures():
     for picNum in range(3):
         displayText("{}/3".format(picNum))
         photoNames.append(capturePhoto())
-        
+        showImage(photoNames[picNum])
+        time.sleep(5)
+
     displayText("Please wait...")
+
+    # this may take a hot second, so do this after we take all our pictures so people can relax
+    for picNum in range(3):
+        photos.append(PIL.Image.open(photoNames[picNum]))
+        photos[picNum] = photos[picNum].resize(PRINT_SUBSIZE)
     
     # resize for insta first since those are actually larger
     if INSTA_ENABLED:
         for picNum in range(3):
-            photos[picNum].resize(INSTA_SUBSIZE)
+            photos[picNum] = photos[picNum].resize(INSTA_SUBSIZE)
             instaImage.paste(photos[picNum], (0, 140))
             instaImage.save("instaTemp{}.jpg".format(picNum))
             
         # launch instagram uploader
         subprocess.Popen("{} {} {} {} {} &".format(os.path.join(dir_path, "rapid_post.sh"), INSTA_USERNAME, INSTA_PASSWORD, "instaTemp", "\"" + INSTA_CAPTION + "\""), close_fds=True, shell=True)
     
-    # this may take a hot second, so do this after we take all our pictures so people can relax
-    for picNum in range(3):
-        photos.append(PIL.Image.open(photoNames[picNum]))
-        photos[picNum].resize(PRINT_SUBSIZE)
         
     bgimage.paste(logoImage, (55, 30))
     bgimage.paste(photos[0], (625, 30))
@@ -226,8 +238,9 @@ def takePictures():
     bgimage.save("tempPrint.jpg")
     
     # show to users
-    showPicture("tempPrint.jpg", 3)
-    
+    #showPicture("tempPrint.jpg", 3)
+    showImage("tempPrint.jpg", 3)
+
 def printPhoto():
     if PRINTING_ENABLED:
         if os.path.isfile("tempPrint.jpg"):
@@ -265,7 +278,7 @@ def main():
     initFilesystem()
     
     # show idle prompt
-    show_image(idlePromptPath)
+    showImage(idlePromptPath)
     
     exitRequest = False
     
@@ -275,9 +288,12 @@ def main():
             break
     
         # gpio pressed
-        if GPIO.input(BUTTON_PIN):
+        if not GPIO.input(BUTTON_PIN):
             takePictures()
             printPhoto()
+            
+            # show idle prompt
+            showImage(idlePromptPath)
         else:
             for event in pygame.event.get():
                 if event.type == pygame.KEYDOWN:
@@ -291,6 +307,9 @@ def main():
                     # down arrow pressed
                     if event.key == pygame.K_DOWN:
                         takePictures()
+                        
+                        # show idle prompt
+                        showImage(idlePromptPath)
                         break
                         
         time.sleep(0.2)
